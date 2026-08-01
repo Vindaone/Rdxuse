@@ -1,0 +1,17 @@
+{
+  "rewrites": [
+    { "source": "/Issues",         "destination": "/index.html" },
+    { "source": "/Issues/(.*)",    "destination": "/index.html" },
+    { "source": "/Downloads",      "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
+    }
+  ]
+}

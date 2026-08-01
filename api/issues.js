@@ -26,7 +26,9 @@ function env(name){
 
 const KV_URL   = env('UPSTASH_REDIS_REST_URL')   ?? env('KV_REST_API_URL');
 const KV_TOKEN = env('UPSTASH_REDIS_REST_TOKEN') ?? env('KV_REST_API_TOKEN');
-const USE_KV = !!(KV_URL && KV_TOKEN);
+// Strip trailing slash so we don't end up with `//GET/key` (double slash)
+const KV_URL_NORM = KV_URL ? KV_URL.replace(/\/+$/, '') : null;
+const USE_KV = !!(KV_URL_NORM && KV_TOKEN);
 
 const KV_KEY = 'rexus_issues:all:v1';
 
@@ -48,7 +50,7 @@ const MEM = new Map();
 async function loadAll(){
   if(USE_KV){
     try{
-      const r = await fetch(`${KV_URL}/GET/${encodeURIComponent(KV_KEY)}`, {
+      const r = await fetch(`${KV_URL_NORM}/GET/${encodeURIComponent(KV_KEY)}`, {
         headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
       });
       if(r.ok){
@@ -74,7 +76,7 @@ async function loadAll(){
 async function saveAll(arr){
   if(USE_KV){
     try{
-      const r = await fetch(`${KV_URL}/SET/${encodeURIComponent(KV_KEY)}`, {
+      const r = await fetch(`${KV_URL_NORM}/SET/${encodeURIComponent(KV_KEY)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,10 +97,11 @@ function genId(){
 }
 
 /* Categories are Rexus-app-specific (not the source project's web/model split):
-   - app   → App issues: crashes, freezes, install failures, update loops, signature conflicts, launcher bugs
-   - game  → Game launch issues: game won't start after Rexus loads it, world won't load, in-game errors
+   - app         → App issues: crashes, freezes, install failures, update loops, signature conflicts, launcher bugs
+   - game        → Game launch issues: game won't start after Rexus loads it, world won't load, in-game errors
+   - suggestion  → Feature requests, UI/UX improvements, ideas to make Rexus better
    Add new keys here and the client will accept them automatically. */
-const VALID_CATEGORIES = ['app', 'game'];
+const VALID_CATEGORIES = ['app', 'game', 'suggestion'];
 
 function sanitizeIssue(input){
   const title = String(input.title || '').trim().slice(0, 200);
@@ -192,6 +195,33 @@ export default async function handler(req){
 
   // ── GET: list all ──
   if(req.method === 'GET'){
+    // Diagnostic endpoint: /api/issues?diag=1
+    // Returns which env vars are present (names only, never values) so you
+    // can verify the Edge Function actually sees your Vercel env vars.
+    // If you added env vars in Vercel but issues still reset, hit this URL
+    // in your browser to check.
+    if(url.searchParams.get('diag') === '1'){
+      return json({
+        storage: USE_KV ? 'upstash-redis' : 'memory-fallback',
+        kvConfigured: USE_KV,
+        envVarsPresent: {
+          UPSTASH_REDIS_REST_URL:    !!env('UPSTASH_REDIS_REST_URL'),
+          UPSTASH_REDIS_REST_TOKEN:  !!env('UPSTASH_REDIS_REST_TOKEN'),
+          KV_REST_API_URL:           !!env('KV_REST_API_URL'),
+          KV_REST_API_TOKEN:         !!env('KV_REST_API_TOKEN'),
+          KV_URL:                    !!env('KV_URL'),
+          REDIS_URL:                 !!env('REDIS_URL')
+        },
+        kvUrlSample: KV_URL_NORM ? KV_URL_NORM.slice(0, 30) + '...' : null,
+        kvTokenPresent: !!KV_TOKEN,
+        kvKey: KV_KEY,
+        validCategories: VALID_CATEGORIES,
+        hint: USE_KV
+          ? 'Upstash/KV is configured. Issues should persist. If they still reset, check that the URL + token are correct and that you REDEPLOYED after adding the env vars.'
+          : 'No KV env vars detected by the Edge Function. If you added them in Vercel, you MUST redeploy for the Edge Function to see them. Env vars are baked in at deploy time.'
+      });
+    }
+
     const arr = await loadAll();
     arr.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     return json({ issues: arr });

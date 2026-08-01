@@ -1352,28 +1352,6 @@
     flex-wrap:wrap;
   }
 
-  /* Owner lock chip on the detail page */
-  .is-owner-lock{
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
-    padding:6px 10px;
-    background:var(--grey);
-    border:1px solid var(--line);
-    border-radius:999px;
-    font-size:11px;
-    color:var(--muted);
-    cursor:pointer;
-    transition:all 0.15s;
-    font-family:inherit;
-  }
-  .is-owner-lock:hover{border-color:#3a3a40;color:var(--text);}
-  .is-owner-lock.on{
-    background:rgba(74,222,128,0.08);
-    border-color:rgba(74,222,128,0.3);
-    color:#4ade80;
-  }
-
   /* Owner-only controls (status select, delete) */
   .is-owner-controls{
     display:none;
@@ -1791,7 +1769,6 @@
       <div class="is-wrap">
         <div class="is-backbar">
           <button class="btn btn-ghost btn-small" id="is-back-btn">&larr; Back</button>
-          <button class="is-owner-lock" id="is-owner-lock" title="Toggle owner mode">Owner mode</button>
         </div>
 
         <!-- HOME sub-view: hero + category grid -->
@@ -3141,8 +3118,6 @@
           try{ sessionStorage.setItem(IS_OWNER_KEY, '1'); }catch(e){}
           ov.classList.remove('show');
           isToast('Owner mode unlocked');
-          var lock = $('is-owner-lock');
-          if(lock){ lock.classList.add('on'); lock.textContent = 'Owner mode: on'; }
           document.body.classList.add('is-owner');
           if(_screen === 'detail') renderDetail();
           // If not on the issues page, navigate there so the user can start editing
@@ -3166,8 +3141,6 @@
       _ownerUnlocked = false;
       try{ sessionStorage.removeItem(IS_OWNER_KEY); }catch(e){}
       document.body.classList.remove('is-owner');
-      var lock = $('is-owner-lock');
-      if(lock){ lock.classList.remove('on'); lock.textContent = 'Owner mode'; }
       if(_screen === 'detail') renderDetail();
       isToast('Owner mode locked');
     }
@@ -3252,20 +3225,14 @@
         });
       }
 
-      var ownerLock = $('is-owner-lock');
-      if(ownerLock){
-        ownerLock.addEventListener('click', function(){
-          if(_ownerUnlocked) lockOwner();
-          else openOwnerPrompt();
-        });
-      }
+      // Owner lock chip removed from UI — owner mode still toggles via the boat
+      // icon and persists in sessionStorage. Refresh the page to lock.
 
       // Restore owner unlocked state from sessionStorage
       try{
         if(sessionStorage.getItem(IS_OWNER_KEY) === '1'){
           _ownerUnlocked = true;
           document.body.classList.add('is-owner');
-          if(ownerLock){ ownerLock.classList.add('on'); ownerLock.textContent = 'Owner mode: on'; }
         }
       }catch(e){}
 

@@ -36,7 +36,7 @@ const USE_KV = !!(KV_URL_NORM && KV_TOKEN);
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Owner-Password',
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store',
   'X-Download-Storage': USE_KV ? 'upstash-redis' : 'memory-fallback'
@@ -47,6 +47,11 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, 
 // 5-minute cooldown per (IP, build). Tunable.
 const COOLDOWN_MS = 5 * 60 * 1000;
 const COOLDOWN_SEC = Math.ceil(COOLDOWN_MS / 1000);
+
+// Owner password for the admin +/- endpoint. MUST match the
+// OWNER_PASSWORD in index.html. Used to gate /api/download?admin=1.
+// Read from env (DL_OWNER_PASSWORD) first, fall back to the default.
+const OWNER_PASSWORD = env('DL_OWNER_PASSWORD') || env('OWNER_PASSWORD') || 'Void';
 
 /* In-memory fallback (per edge instance) */
 const MEM_COUNTS = new Map();  // key -> count
@@ -222,8 +227,28 @@ export default async function handler(req){
     return json({ key, count });
   }
 
-  // ── POST: increment with spam check ──
+  // ── POST ──
   if(req.method === 'POST'){
+    // ─── Admin path: /api/download?key=<key>&admin=1&delta=<int> ───
+    // Used by the owner-mode +/- buttons on the downloads page.
+    // Requires the owner password in the X-Owner-Password header.
+    // Bypasses the IP cooldown (admins can adjust freely) and can
+    // decrement as well as increment. Count is clamped to >= 0.
+    if(url.searchParams.get('admin') === '1'){
+      const sentPassword = req.headers.get('x-owner-password') || '';
+      if(sentPassword !== OWNER_PASSWORD){
+        return json({ error: 'Unauthorized' }, 401);
+      }
+      const deltaRaw = parseInt(url.searchParams.get('delta'), 10);
+      // Accept any integer. NaN or 0 → default to +1 (the common case).
+      const delta = Number.isFinite(deltaRaw) && deltaRaw !== 0 ? deltaRaw : 1;
+      const current = await getCount(key);
+      const next = Math.max(0, current + delta); // never go negative
+      await setCount(key, next);
+      return json({ key, count: next, admin: true, delta });
+    }
+
+    // ─── Normal path: increment with spam check ───
     const ip = getClientIp(req);
     const now = Date.now();
     const last = await getLastClick(ip, key);

@@ -740,6 +740,45 @@
     line-height:1.5;
   }
 
+  /* ---------- download counter ---------- */
+  .dl-counter{
+    position:absolute;
+    right:14px;
+    bottom:10px;
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    font-size:11.5px;
+    color:var(--muted-2);
+    font-family:"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    letter-spacing:0.02em;
+    background:rgba(0,0,0,0.18);
+    padding:4px 9px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    pointer-events:none;
+    user-select:none;
+    transition:opacity 0.3s, transform 0.3s;
+    opacity:0;
+    transform:translateY(4px);
+  }
+  .dl-counter.show{opacity:1;transform:translateY(0);}
+  .dl-counter svg{
+    width:11px;
+    height:11px;
+    stroke:currentColor;
+    fill:none;
+    stroke-width:2;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .dl-counter.bumped{animation:dlBump 0.4s var(--ease);}
+  @keyframes dlBump{
+    0%{transform:translateY(0) scale(1);}
+    40%{transform:translateY(-2px) scale(1.08);color:var(--text);}
+    100%{transform:translateY(0) scale(1);}
+  }
+
   /* ---------- footer ---------- */
   footer{
     border-top:1px solid var(--line);
@@ -1905,7 +1944,8 @@
       os: "Android 8.0+",
       notes: "Improved performance, refreshed UI, faster mod browsing.",
       href: "https://linkpays.in/gNNmfrb",
-      featured: true
+      featured: true,
+      key: "v1.1"    // ← unique key used by /api/download to track this build's count
     }
   ];
 
@@ -1916,8 +1956,10 @@
     BUILDS.forEach(function(b){
       var cardClass = 'build reveal' + (b.featured ? ' featured' : '');
       var btnClass = 'btn btn-small dl-trigger ' + (b.featured ? 'btn-primary' : 'btn-ghost');
+      // Use the version as the key if none is set
+      var buildKey = b.key || b.version;
       html += ''
-        + '<div class="' + cardClass + '">'
+        + '<div class="' + cardClass + '" data-build-key="' + buildKey + '">'
         +   '<div class="build-info">'
         +     '<div class="build-title">'
         +       '<span class="v mono">' + b.version + '</span>'
@@ -1930,12 +1972,108 @@
         +     '</div>'
         +     '<div class="build-notes">' + b.notes + '</div>'
         +   '</div>'
-        +   '<button type="button" class="' + btnClass + '" data-href="' + b.href + '">Download</button>'
+        +   '<button type="button" class="' + btnClass + '" data-href="' + b.href + '" data-build-key="' + buildKey + '">Download</button>'
+        +   '<span class="dl-counter" data-count-key="' + buildKey + '">'
+        +     '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+        +     '<span class="dl-counter-num">–</span>'
+        +   '</span>'
         + '</div>';
     });
     list.innerHTML = html;
   }
   renderBuilds();
+
+  // ---------- download counter ----------
+  // Formats a number as 1.2k / 3.4M / 5.6B / 7.8T etc.
+  function formatCount(n){
+    n = Math.max(0, Math.floor(n || 0));
+    if(n < 1000) return String(n);
+    var units = [
+      { v: 1e12, s: 'T' },
+      { v: 1e9,  s: 'B' },
+      { v: 1e6,  s: 'M' },
+      { v: 1e3,  s: 'k' }
+    ];
+    for(var i = 0; i < units.length; i++){
+      if(n >= units[i].v){
+        var val = n / units[i].v;
+        var str = val.toFixed(val < 10 ? 1 : 0);
+        // strip trailing .0
+        if(str.indexOf('.') > -1 && str.charAt(str.length - 1) === '0') str = str.slice(0, -2);
+        return str + units[i].s;
+      }
+    }
+    return String(n);
+  }
+
+  // Per-build cooldown (client-side mirror of the server-side one).
+  // Stops one user spamming the counter. The server ALSO enforces this
+  // by IP, so even clearing localStorage won't fake counts.
+  var DL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+  var DL_COOLDOWN_KEY = 'rexus_dl_last_click_v1';
+
+  function getLastClicks(){
+    try{ return JSON.parse(localStorage.getItem(DL_COOLDOWN_KEY) || '{}'); }catch(_){ return {}; }
+  }
+  function setLastClick(key, ts){
+    try{
+      var all = getLastClicks();
+      all[key] = ts;
+      localStorage.setItem(DL_COOLDOWN_KEY, JSON.stringify(all));
+    }catch(_){}
+  }
+  function canClick(key){
+    var all = getLastClicks();
+    var last = all[key] || 0;
+    return (Date.now() - last) >= DL_COOLDOWN_MS;
+  }
+
+  // Fetch initial counts for every build on the page
+  function fetchDownloadCounts(){
+    var keys = [];
+    document.querySelectorAll('[data-count-key]').forEach(function(el){
+      var k = el.getAttribute('data-count-key');
+      if(k && keys.indexOf(k) < 0) keys.push(k);
+    });
+    if(!keys.length) return;
+    keys.forEach(function(k){
+      fetch('/api/download?key=' + encodeURIComponent(k), { method:'GET' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(data){
+          if(!data) return;
+          document.querySelectorAll('[data-count-key="' + k + '"]').forEach(function(el){
+            var num = el.querySelector('.dl-counter-num');
+            if(num) num.textContent = formatCount(data.count || 0);
+            el.classList.add('show');
+          });
+        })
+        .catch(function(){
+          // Network failed — still show the counter, just with a dash
+          document.querySelectorAll('[data-count-key="' + k + '"]').forEach(function(el){ el.classList.add('show'); });
+        });
+    });
+  }
+
+  // Increment the counter for a build. No-ops if the user is on cooldown.
+  function bumpDownloadCount(key){
+    if(!key) return;
+    if(!canClick(key)) return; // client-side cooldown
+    setLastClick(key, Date.now());
+    fetch('/api/download?key=' + encodeURIComponent(key), { method:'POST' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if(!data) return;
+        document.querySelectorAll('[data-count-key="' + key + '"]').forEach(function(el){
+          var num = el.querySelector('.dl-counter-num');
+          if(num) num.textContent = formatCount(data.count || 0);
+          el.classList.remove('bumped');
+          // force reflow so the animation restarts
+          void el.offsetWidth;
+          el.classList.add('bumped');
+        });
+      })
+      .catch(function(){});
+  }
 
   // ---------- starfield ----------
   var canvas = document.getElementById('starsCanvas');
@@ -1994,6 +2132,16 @@
   }
 
   // ---------- page nav ----------
+  // Map page name → URL path (for client-side routing).
+  // Home has no path entry — we use '/' for it.
+  var PAGE_PATHS = {
+    home: '/',
+    downloads: '/Downloads',
+    issues: '/Issues'
+  };
+  var PATH_TO_PAGE = {};
+  Object.keys(PAGE_PATHS).forEach(function(k){ PATH_TO_PAGE[PAGE_PATHS[k].toLowerCase()] = k; });
+
   var pages = {
     home: document.getElementById('page-home'),
     downloads: document.getElementById('page-downloads'),
@@ -2007,11 +2155,34 @@
   window.__onEnterIssues = null;
   window.__onLeaveIssues = null;
 
-  function goTo(name){
+  // Push a new history entry so the URL updates (e.g. /Downloads, /Issues).
+  // When navigating to home, the URL resets to '/' (the default).
+  function pushHistory(name){
+    var path = PAGE_PATHS[name] || '/';
+    try{
+      if(location.pathname.toLowerCase() !== path.toLowerCase()){
+        history.pushState({ page: name }, '', path);
+      }
+    }catch(_){ /* pushState can throw on file:// — fine, routing is just cosmetic there */ }
+  }
+
+  // Resolve the current URL path → page name. Used on initial load and
+  // when the user hits back/forward.
+  function pageFromUrl(){
+    var p = (location.pathname || '/').toLowerCase();
+    return PATH_TO_PAGE[p] || 'home';
+  }
+
+  function goTo(name, opts){
+    opts = opts || {};
     if(navigating || name === current) return;
     navigating = true;
     var outgoing = pages[current];
     var incoming = pages[name];
+
+    // Update the URL bar unless this is a popstate-driven navigation
+    // (in which case the URL is already correct).
+    if(!opts.fromPopState) pushHistory(name);
 
     // step 1: fade the current page out (still in flow, no overlap)
     outgoing.classList.add('fade-out');
@@ -2050,6 +2221,30 @@
       }, 400);
     }, 220);
   }
+
+  // Handle browser back/forward. The URL has already changed by the
+  // time this fires — we just sync the visible page to match.
+  window.addEventListener('popstate', function(e){
+    var target = (e.state && e.state.page) || pageFromUrl();
+    if(target !== current){
+      goTo(target, { fromPopState: true });
+    }
+  });
+
+  // On initial load: if the URL is /Downloads or /Issues (or any other
+  // known route), jump straight to that page. The vercel.json rewrites
+  // already serve index.html for these paths, so the URL stays intact.
+  (function initRouteFromUrl(){
+    var target = pageFromUrl();
+    if(target !== 'home'){
+      // Replace state so we have a proper history entry for the deep link
+      try{ history.replaceState({ page: target }, '', PAGE_PATHS[target] || '/'); }catch(_){}
+      // Defer until the page transition system is ready
+      setTimeout(function(){ goTo(target, { fromPopState: true }); }, 60);
+    } else {
+      try{ history.replaceState({ page: 'home' }, '', '/'); }catch(_){}
+    }
+  })();
 
   document.querySelectorAll('[data-nav]').forEach(function(el){
     el.addEventListener('click', function(e){
@@ -2281,6 +2476,9 @@
   document.querySelectorAll('.dl-trigger').forEach(function(link){
     link.addEventListener('click', function(){
       openModal(link.getAttribute('data-href'));
+      // Fire the counter bump — the cooldown + server-side IP check
+      // prevents one user from inflating the count.
+      bumpDownloadCount(link.getAttribute('data-build-key'));
     });
   });
 
@@ -2298,6 +2496,9 @@
       window.open(url, '_blank', 'noopener');
     }
   });
+
+  // Kick off the initial download-count fetch once the DOM is ready
+  fetchDownloadCounts();
 
   /* ═══════════════════════════════════════════════════════════════════
      ISSUES MODULE  —  Rexus bug tracker
@@ -2976,15 +3177,44 @@
       }
       var body = $('is-modal-body');
       if(!body) return;
+      // If the user is in the Suggestions category, the form talks about
+      // "suggestions" instead of "issues" — same fields, different copy.
+      var isSuggestion = (_category === 'suggestion');
+      var L = isSuggestion ? {
+        modalTitle: 'Submit suggestion',
+        titleLabel: 'Suggestion Title',
+        titlePh: 'Brief headline, e.g. \u201CAdd custom themes\u201D',
+        summaryLabel: 'Short Summary',
+        summaryPh: 'One-line summary of your idea',
+        descLabel: 'Description',
+        descPh: 'Describe your suggestion in detail. What problem does it solve, or what would it improve?',
+        reasonLabel: 'Why',
+        reasonPh: 'Why this would be useful, or what you were trying to do',
+        submitBtn: 'Submit Suggestion'
+      } : {
+        modalTitle: 'Submit issue',
+        titleLabel: 'Issue Title',
+        titlePh: 'Brief headline, e.g. \u201CApp crashes on world load\u201D',
+        summaryLabel: 'Short Summary',
+        summaryPh: 'One-line summary of what happened',
+        descLabel: 'Description',
+        descPh: 'Describe the issue in detail. Include your device, Android version, and Rexus version if you can.',
+        reasonLabel: 'Reason',
+        reasonPh: 'Your best guess at why this happens, or what you were doing when it did',
+        submitBtn: 'Submit Issue'
+      };
+      // Update the modal title in the header
+      var titleEl = $('is-modal-title');
+      if(titleEl) titleEl.textContent = L.modalTitle;
       body.innerHTML =
-        field('title','Issue Title','text','Brief headline, e.g. \u201CApp crashes on world load\u201D', true) +
-        field('summary','Short Summary','text','One-line summary of what happened', true) +
-        fieldTA('description','Description','Describe the issue in detail. Include your device, Android version, and Rexus version if you can.', true) +
-        fieldTA('reason','Reason','Your best guess at why this happens, or what you were doing when it did', true) +
+        field('title', L.titleLabel, 'text', L.titlePh, true) +
+        field('summary', L.summaryLabel, 'text', L.summaryPh, true) +
+        fieldTA('description', L.descLabel, L.descPh, true) +
+        fieldTA('reason', L.reasonLabel, L.reasonPh, true) +
         fieldTA('steps','Steps to Reproduce','Optional, numbered steps that always trigger it', false) +
         fieldTA('expected','Expected Behavior','Optional, what should have happened', false) +
         fieldTA('actual','Actual Behavior','Optional, what actually happened', false) +
-        '<button class="is-submit" id="is-submit-btn">Submit Issue</button>';
+        '<button class="is-submit" id="is-submit-btn">' + L.submitBtn + '</button>';
       var ov = $('is-modal-overlay');
       if(ov) ov.classList.add('show');
       // wire close + submit

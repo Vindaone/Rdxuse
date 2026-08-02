@@ -740,11 +740,19 @@
     line-height:1.5;
   }
 
-  /* ---------- download counter ---------- */
-  .dl-counter{
+  /* ---------- bottom-right pills (comments + download counter) ---------- */
+  .dl-pills{
     position:absolute;
     right:14px;
     bottom:10px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    z-index:2;
+  }
+
+  /* ---------- download counter ---------- */
+  .dl-counter{
     display:inline-flex;
     align-items:center;
     gap:5px;
@@ -834,11 +842,8 @@
      buttons don't overlap it on small cards. */
   body.is-owner .dl-counter{bottom:10px;}
 
-  /* ---------- comments button (left of download counter) ---------- */
+  /* ---------- comments button (beside download counter) ---------- */
   .dl-comments{
-    position:absolute;
-    left:14px;
-    bottom:10px;
     display:inline-flex;
     align-items:center;
     gap:5px;
@@ -1182,6 +1187,16 @@
   @keyframes cmPulse{
     0%,100%{opacity:0.6;}
     50%{opacity:1;}
+  }
+  /* Failed comment — red dashed border, stays visible so the user
+     can see what they tried to post */
+  .cm-comment.is-failed .cm-comment-inner{
+    border-style:dashed;
+    border-color:rgba(248,113,113,0.4);
+    background:rgba(248,113,113,0.03);
+  }
+  .cm-comment.is-failed .cm-avatar{
+    background:linear-gradient(135deg,#7f1d1d,#450a0a);
   }
 
   /* ---------- footer ---------- */
@@ -2411,17 +2426,17 @@
         +     '<button type="button" class="dl-admin-btn minus" data-admin-action="dec" data-admin-key="' + buildKey + '" title="Decrease count" aria-label="Decrease count">&minus;</button>'
         +     '<button type="button" class="dl-admin-btn plus"  data-admin-action="inc" data-admin-key="' + buildKey + '" title="Increase count" aria-label="Increase count">+</button>'
         +   '</span>'
-        // Comments button — sits at the bottom-LEFT of the card, same pill
-        // design as the download counter. Tapping it opens the floating
-        // comments panel for this build.
-        +   '<button type="button" class="dl-comments" data-comments-key="' + buildKey + '" title="Comments" aria-label="Comments">'
-        +     '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>'
-        +     '<span class="dl-comments-num">0</span>'
-        +   '</button>'
-        +   '<span class="dl-counter" data-count-key="' + buildKey + '">'
-        +     '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
-        +     '<span class="dl-counter-num">–</span>'
-        +   '</span>'
+        // Bottom-right pills: comments button + download counter side by side
+        +   '<div class="dl-pills">'
+        +     '<button type="button" class="dl-comments" data-comments-key="' + buildKey + '" title="Comments" aria-label="Comments">'
+        +       '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>'
+        +       '<span class="dl-comments-num">0</span>'
+        +     '</button>'
+        +     '<span class="dl-counter" data-count-key="' + buildKey + '">'
+        +       '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+        +       '<span class="dl-counter-num">–</span>'
+        +     '</span>'
+        +   '</div>'
         + '</div>';
     });
     list.innerHTML = html;
@@ -2684,13 +2699,39 @@
       return s;
     }
     function countComments(arr){
-      // Count top-level + all nested replies
-      var n = 0;
-      for(var i=0;i<arr.length;i++){
-        n++;
-        if(arr[i].replies && arr[i].replies.length) n += countComments(arr[i].replies);
+      // The flat array IS the full list — just return its length
+      return arr.length;
+    }
+
+    // ---- Tree assembly ----
+    // The server stores comments as a FLAT array (each has a parentId).
+    // We assemble them into a tree (with `replies` arrays) for rendering.
+    // This is called every time we render, so the tree is always built
+    // from the current flat state — no manual `replies` maintenance.
+    function buildTree(flatArr){
+      var byId = {};
+      var topLevel = [];
+      // First pass: clone each comment and init replies:[]
+      for(var i=0;i<flatArr.length;i++){
+        var c = flatArr[i];
+        byId[c.id] = {
+          id: c.id, name: c.name, creatorId: c.creatorId,
+          text: c.text, parentId: c.parentId,
+          createdAt: c.createdAt, _pending: c._pending, _failed: c._failed,
+          replies: []
+        };
       }
-      return n;
+      // Second pass: link children to parents
+      for(var j=0;j<flatArr.length;j++){
+        var c2 = flatArr[j];
+        var node = byId[c2.id];
+        if(c2.parentId && byId[c2.parentId]){
+          byId[c2.parentId].replies.push(node);
+        } else {
+          topLevel.push(node);
+        }
+      }
+      return topLevel;
     }
 
     // ---- API ----
@@ -2700,16 +2741,26 @@
       return fetch(CM_API + '?key=' + encodeURIComponent(buildKey), { method:'GET', signal:ctrl.signal, headers:{'Accept':'application/json'} })
         .then(function(r){ clearTimeout(id); return r.ok ? r.json() : null; })
         .then(function(data){
-          if(!data || !Array.isArray(data.comments)) return cacheRead(buildKey);
+          if(!data || !Array.isArray(data.comments)) return _comments[buildKey] || cacheRead(buildKey);
           // Sort: oldest first (so replies read top-to-bottom naturally)
           data.comments.sort(function(a,b){ return (a.createdAt||0) - (b.createdAt||0); });
-          _comments[buildKey] = data.comments;
+          // PRESERVE pending optimistic comments — if the user submitted a
+          // comment while this fetch was in flight, don't wipe it. Merge
+          // any _pending entries into the server response.
+          var existing = _comments[buildKey] || [];
+          var pending = existing.filter(function(c){ return c._pending; });
+          if(pending.length){
+            _comments[buildKey] = data.comments.concat(pending);
+          } else {
+            _comments[buildKey] = data.comments;
+          }
+          // Cache only confirmed comments (not pending ones)
           cacheWrite(buildKey, data.comments);
-          return data.comments;
+          return _comments[buildKey];
         })
         .catch(function(){
           clearTimeout(id);
-          return cacheRead(buildKey);
+          return _comments[buildKey] || cacheRead(buildKey);
         });
     }
 
@@ -2745,24 +2796,16 @@
         .catch(function(){ clearTimeout(id); return false; });
     }
 
-    // ---- Local mutation helpers (optimistic) ----
-    // Find a comment (top-level or nested) by id. Returns {comment, parentArr, parent}.
+    // ---- Local mutation helpers (work on the FLAT array) ----
     function findComment(arr, id){
       for(var i=0;i<arr.length;i++){
-        if(arr[i].id === id) return { comment: arr[i], parentArr: arr, parent: null };
-        if(arr[i].replies && arr[i].replies.length){
-          var found = findComment(arr[i].replies, id);
-          if(found) return found;
-        }
+        if(arr[i].id === id) return arr[i];
       }
       return null;
     }
     function removeComment(arr, id){
       for(var i=0;i<arr.length;i++){
         if(arr[i].id === id){ arr.splice(i,1); return true; }
-        if(arr[i].replies && arr[i].replies.length){
-          if(removeComment(arr[i].replies, id)) return true;
-        }
       }
       return false;
     }
@@ -2782,7 +2825,7 @@
         '<button class="cm-reply-btn" data-cm-action="reply" data-cm-id="' + esc(c.id) + '">Reply</button>' +
         (canDelete ? '<button class="cm-delete-btn" data-cm-action="delete" data-cm-id="' + esc(c.id) + '">Delete</button>' : '') +
       '</div>';
-      return '<div class="cm-comment' + (isMine ? ' is-mine' : '') + (c._pending ? ' is-pending' : '') + '" data-cm-id="' + esc(c.id) + '">' +
+      return '<div class="cm-comment' + (isMine ? ' is-mine' : '') + (c._pending ? ' is-pending' : '') + (c._failed ? ' is-failed' : '') + '" data-cm-id="' + esc(c.id) + '">' +
         '<div class="cm-comment-inner">' +
           '<div class="cm-comment-head">' +
             '<span class="cm-avatar">' + esc(avatarFor(c.name)) + '</span>' +
@@ -2803,9 +2846,10 @@
       if(!arr.length){
         scroll.innerHTML = '<div class="cm-empty"><strong>No comments yet.</strong>Be the first to share your thoughts.</div>';
       } else {
-        // Only render top-level; nested replies are rendered inside renderComment
-        var topLevel = arr.filter(function(c){ return !c.parentId; });
-        scroll.innerHTML = topLevel.map(function(c){ return renderComment(c, false); }).join('');
+        // Build the tree from the flat array, then render top-level comments.
+        // Nested replies are rendered recursively inside renderComment.
+        var tree = buildTree(arr);
+        scroll.innerHTML = tree.map(function(c){ return renderComment(c, false); }).join('');
       }
       // Update header count
       var sub = $('cm-head-sub');
@@ -2907,31 +2951,21 @@
       var parentId = _replyTo ? _replyTo.id : null;
       var tempId = 'pending_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 
-      // Build the optimistic comment object
+      // Build the optimistic comment object — FLAT, just like the server
+      // stores it. buildTree() will nest it under its parent on render.
       var optimistic = {
         id: tempId,
         name: name,
         creatorId: creatorId,
         text: text,
         parentId: parentId,
-        replies: [],
         createdAt: Date.now(),
         _pending: true
       };
 
-      // Insert into local state
+      // Insert into the FLAT array — buildTree handles nesting
       var arr = _comments[_currentBuild] || (_comments[_currentBuild] = []);
-      if(parentId){
-        var found = findComment(arr, parentId);
-        if(found){
-          if(!found.comment.replies) found.comment.replies = [];
-          found.comment.replies.push(optimistic);
-        } else {
-          arr.push(optimistic); // fallback if parent not found
-        }
-      } else {
-        arr.push(optimistic);
-      }
+      arr.push(optimistic);
       cacheWrite(_currentBuild, arr);
 
       // Re-render + scroll to the new comment
@@ -2955,38 +2989,38 @@
       })
         .then(function(comment){
           if(comment){
-            // Replace the optimistic entry with the real one
+            // Replace the optimistic entry with the real one IN THE FLAT ARRAY
             var cur = _comments[_currentBuild] || [];
             var found = findComment(cur, tempId);
             if(found){
               // Copy the real comment's fields over the optimistic one
-              Object.keys(comment).forEach(function(k){ found.comment[k] = comment[k]; });
-              found.comment._pending = false;
+              found.id = comment.id;
+              found.name = comment.name;
+              found.creatorId = comment.creatorId;
+              found.text = comment.text;
+              found.parentId = comment.parentId;
+              found.createdAt = comment.createdAt;
+              found._pending = false;
             } else {
-              // Fallback: just append the real comment
-              if(parentId){
-                var parent = findComment(cur, parentId);
-                if(parent){
-                  if(!parent.comment.replies) parent.comment.replies = [];
-                  parent.comment.replies.push(comment);
-                } else cur.push(comment);
-              } else {
-                cur.push(comment);
-              }
+              // Fallback: just push the real comment
+              cur.push(comment);
             }
             _comments[_currentBuild] = cur;
             cacheWrite(_currentBuild, cur);
             renderList();
-            // Update the card's comments button count
             updateCardCount(_currentBuild);
           }
         })
         .catch(function(e){
-          // Remove the optimistic comment on failure
+          // On failure, DON'T remove the optimistic comment immediately.
+          // Mark it as failed so the user can see what they tried to post.
+          // The comment stays in the local state but won't be cached.
           var cur = _comments[_currentBuild] || [];
-          removeComment(cur, tempId);
-          _comments[_currentBuild] = cur;
-          cacheWrite(_currentBuild, cur);
+          var found = findComment(cur, tempId);
+          if(found){
+            found._pending = false;
+            found._failed = true;
+          }
           renderList();
           updateCardCount(_currentBuild);
           // Show a toast
@@ -3098,7 +3132,7 @@
           if(action === 'reply'){
             var arr = _comments[_currentBuild] || [];
             var found = findComment(arr, id);
-            if(found) showReplyIndicator(found.comment);
+            if(found) showReplyIndicator(found);
           } else if(action === 'delete'){
             deleteComment(id);
           }

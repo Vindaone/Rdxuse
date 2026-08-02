@@ -779,6 +779,61 @@
     100%{transform:translateY(0) scale(1);}
   }
 
+  /* Owner-mode +/- buttons next to each counter.
+     Hidden by default, only shown when body.is-owner is set.
+     Normal users can't see or click them. */
+  .dl-admin{
+    position:absolute;
+    right:14px;
+    top:10px;
+    display:none;
+    align-items:center;
+    gap:4px;
+    z-index:5;
+  }
+  body.is-owner .dl-admin{display:inline-flex;}
+  .dl-admin-btn{
+    width:26px;
+    height:26px;
+    flex:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:7px;
+    color:var(--muted);
+    cursor:pointer;
+    font-size:15px;
+    font-weight:600;
+    line-height:1;
+    font-family:inherit;
+    transition:background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+    padding:0;
+  }
+  .dl-admin-btn:hover{
+    background:var(--grey-hover);
+    border-color:#3a3a40;
+    color:var(--text);
+  }
+  .dl-admin-btn:active{transform:scale(0.92);}
+  .dl-admin-btn:disabled{opacity:0.4;cursor:default;}
+  .dl-admin-btn.minus{color:#f87171;}
+  .dl-admin-btn.minus:hover{
+    border-color:rgba(248,113,113,0.4);
+    background:rgba(248,113,113,0.08);
+    color:#f87171;
+  }
+  .dl-admin-btn.plus{color:#4ade80;}
+  .dl-admin-btn.plus:hover{
+    border-color:rgba(74,222,128,0.4);
+    background:rgba(74,222,128,0.08);
+    color:#4ade80;
+  }
+  /* When owner mode is on, lift the counter slightly so the admin
+     buttons don't overlap it on small cards. */
+  body.is-owner .dl-counter{bottom:10px;}
+
   /* ---------- footer ---------- */
   footer{
     border-top:1px solid var(--line);
@@ -1973,6 +2028,12 @@
         +     '<div class="build-notes">' + b.notes + '</div>'
         +   '</div>'
         +   '<button type="button" class="' + btnClass + '" data-href="' + b.href + '" data-build-key="' + buildKey + '">Download</button>'
+        // Owner-mode admin buttons (only visible when body.is-owner is set).
+        // Hidden via CSS for normal users — they can't see or click them.
+        +   '<span class="dl-admin" data-admin-key="' + buildKey + '">'
+        +     '<button type="button" class="dl-admin-btn minus" data-admin-action="dec" data-admin-key="' + buildKey + '" title="Decrease count" aria-label="Decrease count">&minus;</button>'
+        +     '<button type="button" class="dl-admin-btn plus"  data-admin-action="inc" data-admin-key="' + buildKey + '" title="Increase count" aria-label="Increase count">+</button>'
+        +   '</span>'
         +   '<span class="dl-counter" data-count-key="' + buildKey + '">'
         +     '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
         +     '<span class="dl-counter-num">–</span>'
@@ -2074,6 +2135,64 @@
       })
       .catch(function(){});
   }
+
+  // Owner-mode: directly set the count via the admin endpoint.
+  // `delta` is +1 or -1. Sends the owner password as a header so the
+  // server can verify it. No-ops if the user isn't in owner mode.
+  function adminAdjustCount(key, delta){
+    if(!key) return;
+    if(!document.body.classList.contains('is-owner')) return; // safety net
+    var adminBtns = document.querySelectorAll('.dl-admin-btn[data-admin-key="' + key + '"]');
+    // Disable both buttons while the request is in flight so the user
+    // can't double-tap and cause a race.
+    adminBtns.forEach(function(b){ b.disabled = true; });
+    fetch('/api/download?key=' + encodeURIComponent(key) + '&admin=1&delta=' + delta, {
+      method: 'POST',
+      headers: { 'X-Owner-Password': window.__ownerPassword || '' }
+    })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(data){
+        if(!data) return;
+        document.querySelectorAll('[data-count-key="' + key + '"]').forEach(function(el){
+          var num = el.querySelector('.dl-counter-num');
+          if(num) num.textContent = formatCount(data.count || 0);
+          el.classList.remove('bumped');
+          void el.offsetWidth;
+          el.classList.add('bumped');
+        });
+      })
+      .catch(function(){})
+      .then(function(){
+        // Re-enable regardless of success/failure
+        adminBtns.forEach(function(b){ b.disabled = false; });
+      });
+  }
+
+  // Wire up every +/- admin button on the page. We use event delegation
+  // on the builds list so this works even if the cards get re-rendered.
+  (function wireAdminButtons(){
+    var list = document.getElementById('buildsList');
+    if(!list) return;
+    list.addEventListener('click', function(e){
+      var btn = e.target.closest && e.target.closest('.dl-admin-btn');
+      if(!btn) return;
+      // Safety check: only act if owner mode is on. The buttons are
+      // hidden via CSS otherwise, but this guards against anyone
+      // manually un-hiding them via DevTools.
+      if(!document.body.classList.contains('is-owner')){
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      var action = btn.getAttribute('data-admin-action');
+      var key = btn.getAttribute('data-admin-key');
+      if(!key) return;
+      if(action === 'inc') adminAdjustCount(key, 1);
+      else if(action === 'dec') adminAdjustCount(key, -1);
+    });
+  })();
 
   // ---------- starfield ----------
   var canvas = document.getElementById('starsCanvas');
@@ -2525,6 +2644,9 @@
     // for a stronger gate, move the password check into a serverless
     // function and require a token on PUT/DELETE.
     var OWNER_PASSWORD = 'Void';
+    // Expose to the outer script scope so the download-counter admin
+    // buttons can send it as a header to /api/download?admin=1.
+    window.__ownerPassword = OWNER_PASSWORD;
 
     var IS_API = '/api/issues';
     var IS_CACHE_KEY = 'rexus_issues_cache_v1';

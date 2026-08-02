@@ -1,0 +1,245 @@
+export const config = { runtime: 'edge' };
+
+/* ═══════════════════════════════════════════════════════════════════
+   /api/download — Download counter for Rexus builds
+   Methods:
+     GET    /api/download?key=<buildKey>            → { key, count }
+     POST   /api/download?key=<buildKey>            → { key, count, counted }
+
+   Spam prevention:
+   - Each (IP, buildKey) pair can only increment once per COOLDOWN_MS.
+   - We store `dl:ip:<ip>:<key>` in Upstash with a TTL equal to the
+     cooldown. If the key exists, the POST returns the current count
+     without incrementing (counted: false).
+   - The client ALSO keeps a localStorage mirror so most repeat clicks
+     never even hit the server. The server-side check is the source of
+     truth — clearing localStorage won't fake the count.
+
+   Storage (auto-detected, same env vars as /api/issues):
+   1. UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+   2. KV_REST_API_URL + KV_REST_API_TOKEN
+   3. In-memory Map fallback (per edge instance — NOT cross-user safe,
+      and counts reset on cold start). Wire up Upstash for real use.
+   ═══════════════════════════════════════════════════════════════════ */
+
+function env(name){
+  return (typeof process !== 'undefined' ? process.env?.[name] : undefined)
+      ?? (typeof globalThis !== 'undefined' ? globalThis[name] : undefined);
+}
+
+const KV_URL   = env('UPSTASH_REDIS_REST_URL')   ?? env('KV_REST_API_URL');
+const KV_TOKEN = env('UPSTASH_REDIS_REST_TOKEN') ?? env('KV_REST_API_TOKEN');
+// Strip trailing slash so we don't end up with `//GET/key`
+const KV_URL_NORM = KV_URL ? KV_URL.replace(/\/+$/, '') : null;
+const USE_KV = !!(KV_URL_NORM && KV_TOKEN);
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store',
+  'X-Download-Storage': USE_KV ? 'upstash-redis' : 'memory-fallback'
+};
+
+const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: CORS });
+
+// 5-minute cooldown per (IP, build). Tunable.
+const COOLDOWN_MS = 5 * 60 * 1000;
+const COOLDOWN_SEC = Math.ceil(COOLDOWN_MS / 1000);
+
+/* In-memory fallback (per edge instance) */
+const MEM_COUNTS = new Map();  // key -> count
+const MEM_IPS = new Map();     // `ip:key` -> timestamp
+
+function getClientIp(req){
+  // Vercel Edge Functions put the visitor IP in x-forwarded-for (first entry)
+  // or x-real-ip. Fall back to 'unknown' if neither is set (rare).
+  const xff = req.headers.get('x-forwarded-for');
+  if(xff){
+    const first = xff.split(',')[0].trim();
+    if(first) return first;
+  }
+  return req.headers.get('x-real-ip') || 'unknown';
+}
+
+function sanitizeKey(k){
+  // Allow alphanumerics, dot, dash, underscore. Max 64 chars.
+  return String(k || '').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64);
+}
+
+async function getCount(key){
+  if(USE_KV){
+    try{
+      const r = await fetch(`${KV_URL_NORM}/GET/${encodeURIComponent('dl:count:' + key)}`, {
+        headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
+      });
+      if(r.ok){
+        const data = await r.json();
+        if(data && typeof data.result === 'string'){
+          return parseInt(data.result, 10) || 0;
+        }
+        if(data && typeof data.value === 'string'){
+          return parseInt(data.value, 10) || 0;
+        }
+      }
+      return 0;
+    }catch(_){ return 0; }
+  }
+  return MEM_COUNTS.get(key) || 0;
+}
+
+async function setCount(key, n){
+  if(USE_KV){
+    try{
+      const r = await fetch(`${KV_URL_NORM}/SET/${encodeURIComponent('dl:count:' + key)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {})
+        },
+        body: JSON.stringify(String(n))
+      });
+      return r.ok;
+    }catch(_){ return false; }
+  }
+  MEM_COUNTS.set(key, n);
+  return true;
+}
+
+// Atomically increment using Upstash's INCR command. Falls back to
+// GET-then-SET if INCR isn't available (it always is on Upstash, but
+// we keep the fallback for safety).
+async function incrCount(key){
+  if(USE_KV){
+    try{
+      // Upstash REST: POST /incr/<key> → { result: <number> }
+      const r = await fetch(`${KV_URL_NORM}/INCR/${encodeURIComponent('dl:count:' + key)}`, {
+        method: 'POST',
+        headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
+      });
+      if(r.ok){
+        const data = await r.json();
+        if(data && typeof data.result === 'number'){
+          return data.result;
+        }
+        if(data && typeof data.result === 'string'){
+          return parseInt(data.result, 10) || 0;
+        }
+      }
+      // Fallback: GET then SET
+      const cur = await getCount(key);
+      const next = cur + 1;
+      await setCount(key, next);
+      return next;
+    }catch(_){
+      const cur = await getCount(key);
+      const next = cur + 1;
+      await setCount(key, next);
+      return next;
+    }
+  }
+  const next = (MEM_COUNTS.get(key) || 0) + 1;
+  MEM_COUNTS.set(key, next);
+  return next;
+}
+
+async function getLastClick(ip, key){
+  const fieldKey = 'dl:ip:' + ip + ':' + key;
+  if(USE_KV){
+    try{
+      const r = await fetch(`${KV_URL_NORM}/GET/${encodeURIComponent(fieldKey)}`, {
+        headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
+      });
+      if(r.ok){
+        const data = await r.json();
+        if(data && typeof data.result === 'string'){
+          return parseInt(data.result, 10) || 0;
+        }
+      }
+      return 0;
+    }catch(_){ return 0; }
+  }
+  return MEM_IPS.get(ip + ':' + key) || 0;
+}
+
+async function setLastClick(ip, key, ts){
+  const fieldKey = 'dl:ip:' + ip + ':' + key;
+  if(USE_KV){
+    try{
+      // Upstash: POST /set/<key>/<value>?EX=<ttl-seconds>
+      // The TTL auto-expires the cooldown key, so old entries clean
+      // themselves up instead of accumulating forever.
+      const r = await fetch(`${KV_URL_NORM}/SET/${encodeURIComponent(fieldKey)}/${ts}?EX=${COOLDOWN_SEC}`, {
+        method: 'POST',
+        headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
+      });
+      return r.ok;
+    }catch(_){ return false; }
+  }
+  MEM_IPS.set(ip + ':' + key, ts);
+  return true;
+}
+
+export default async function handler(req){
+  if(req.method === 'OPTIONS'){
+    return new Response(null, { status: 200, headers: CORS });
+  }
+
+  const url = new URL(req.url);
+
+  // ── Diagnostic endpoint: /api/download?diag=1 ──
+  // Checked BEFORE the key requirement so you can hit it without a key.
+  // Same shape as /api/issues?diag=1 so you can verify the Edge Function
+  // sees your Upstash env vars.
+  if(url.searchParams.get('diag') === '1'){
+    return json({
+      storage: USE_KV ? 'upstash-redis' : 'memory-fallback',
+      kvConfigured: USE_KV,
+      envVarsPresent: {
+        UPSTASH_REDIS_REST_URL:    !!env('UPSTASH_REDIS_REST_URL'),
+        UPSTASH_REDIS_REST_TOKEN:  !!env('UPSTASH_REDIS_REST_TOKEN'),
+        KV_REST_API_URL:           !!env('KV_REST_API_URL'),
+        KV_REST_API_TOKEN:         !!env('KV_REST_API_TOKEN')
+      },
+      cooldownMs: COOLDOWN_MS,
+      cooldownSec: COOLDOWN_SEC,
+      hint: USE_KV
+        ? 'Upstash/KV is configured. Download counts will persist across users.'
+        : 'No KV env vars detected. Counts are in-memory only and will reset on cold start. Add Upstash env vars and redeploy.'
+    });
+  }
+
+  const key = sanitizeKey(url.searchParams.get('key'));
+
+  if(!key){
+    return json({ error: 'Missing key parameter. Example: /api/download?key=v1.1' }, 400);
+  }
+
+  // ── GET: return current count ──
+  if(req.method === 'GET'){
+    const count = await getCount(key);
+    return json({ key, count });
+  }
+
+  // ── POST: increment with spam check ──
+  if(req.method === 'POST'){
+    const ip = getClientIp(req);
+    const now = Date.now();
+    const last = await getLastClick(ip, key);
+
+    if(last && (now - last) < COOLDOWN_MS){
+      // Spam — don't count
+      const count = await getCount(key);
+      return json({ key, count, counted: false, reason: 'cooldown', retryAfterSec: Math.ceil((COOLDOWN_MS - (now - last)) / 1000) });
+    }
+
+    // Count it (atomically)
+    const newCount = await incrCount(key);
+    await setLastClick(ip, key, now);
+
+    return json({ key, count: newCount, counted: true });
+  }
+
+  return json({ error: 'Method not allowed' }, 405);
+}

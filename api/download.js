@@ -97,13 +97,16 @@ async function getCount(key){
 async function setCount(key, n){
   if(USE_KV){
     try{
-      const r = await fetch(`${KV_URL_NORM}/SET/${encodeURIComponent('dl:count:' + key)}`, {
+      // Use the URL-path form: POST /SET/<key>/<value>
+      // This stores the value as a plain string (no JSON quotes),
+      // so subsequent INCR/DECR and parseInt() both work correctly.
+      // The previous version used JSON.stringify(String(n)) as the body,
+      // which stored the value WITH quotes (e.g. "5" became '"5"'),
+      // breaking parseInt on read-back and causing the count to get
+      // stuck at 1 after the first admin adjustment.
+      const r = await fetch(`${KV_URL_NORM}/SET/${encodeURIComponent('dl:count:' + key)}/${encodeURIComponent(String(n))}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {})
-        },
-        body: JSON.stringify(String(n))
+        headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
       });
       return r.ok;
     }catch(_){ return false; }
@@ -242,10 +245,50 @@ export default async function handler(req){
       const deltaRaw = parseInt(url.searchParams.get('delta'), 10);
       // Accept any integer. NaN or 0 → default to +1 (the common case).
       const delta = Number.isFinite(deltaRaw) && deltaRaw !== 0 ? deltaRaw : 1;
-      const current = await getCount(key);
-      const next = Math.max(0, current + delta); // never go negative
-      await setCount(key, next);
-      return json({ key, count: next, admin: true, delta });
+
+      let newCount;
+      if(USE_KV){
+        // Use atomic INCRBY / DECRBY so concurrent admin taps can't
+        // race and lose an increment. This also avoids the GET+SET
+        // round-trip which was previously buggy.
+        try{
+          if(delta > 0){
+            const r = await fetch(`${KV_URL_NORM}/INCRBY/${encodeURIComponent('dl:count:' + key)}/${delta}`, {
+              method: 'POST',
+              headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
+            });
+            if(r.ok){
+              const data = await r.json();
+              newCount = parseInt(data.result, 10) || 0;
+            } else { newCount = await getCount(key); }
+          } else {
+            // DECRBY by abs(delta). Note: Redis DECRBY can go negative,
+            // so we clamp afterwards if needed.
+            const absDelta = Math.abs(delta);
+            const r = await fetch(`${KV_URL_NORM}/DECRBY/${encodeURIComponent('dl:count:' + key)}/${absDelta}`, {
+              method: 'POST',
+              headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
+            });
+            if(r.ok){
+              const data = await r.json();
+              newCount = parseInt(data.result, 10) || 0;
+            } else { newCount = await getCount(key); }
+          }
+        }catch(_){ newCount = await getCount(key); }
+
+        // Clamp at 0 — if DECRBY went negative, reset to 0.
+        if(newCount < 0){
+          await setCount(key, 0);
+          newCount = 0;
+        }
+      } else {
+        // In-memory fallback (no KV)
+        const current = await getCount(key);
+        newCount = Math.max(0, current + delta);
+        await setCount(key, newCount);
+      }
+
+      return json({ key, count: newCount, admin: true, delta });
     }
 
     // ─── Normal path: increment with spam check ───

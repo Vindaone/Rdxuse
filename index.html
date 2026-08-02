@@ -834,6 +834,356 @@
      buttons don't overlap it on small cards. */
   body.is-owner .dl-counter{bottom:10px;}
 
+  /* ---------- comments button (left of download counter) ---------- */
+  .dl-comments{
+    position:absolute;
+    left:14px;
+    bottom:10px;
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    font-size:11.5px;
+    color:var(--muted-2);
+    font-family:"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    letter-spacing:0.02em;
+    background:rgba(0,0,0,0.18);
+    padding:4px 9px 4px 7px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    cursor:pointer;
+    user-select:none;
+    transition:opacity 0.3s, transform 0.3s, border-color 0.15s, color 0.15s, background 0.15s;
+    opacity:0;
+    transform:translateY(4px);
+  }
+  .dl-comments.show{opacity:1;transform:translateY(0);}
+  .dl-comments:hover{
+    border-color:#3a3a40;
+    color:var(--text);
+    background:rgba(0,0,0,0.32);
+  }
+  .dl-comments:active{transform:translateY(0) scale(0.96);}
+  .dl-comments svg{
+    width:11px;
+    height:11px;
+    stroke:currentColor;
+    fill:none;
+    stroke-width:2;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  /* Shift the download counter right when the comments button is visible
+     so the two pills sit side-by-side at the bottom of the card. */
+  .build.has-comments .dl-counter{ }
+
+  /* ---------- floating comments panel ---------- */
+  .cm-overlay{
+    position:fixed;
+    inset:0;
+    z-index:600;
+    background:rgba(0,0,0,0.55);
+    backdrop-filter:blur(3px);
+    -webkit-backdrop-filter:blur(3px);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.32s var(--ease);
+  }
+  .cm-overlay.show{opacity:1;pointer-events:auto;}
+
+  .cm-panel{
+    position:fixed;
+    left:50%;
+    bottom:0;
+    transform:translateX(-50%) translateY(100%);
+    z-index:601;
+    width:100%;
+    max-width:560px;
+    max-height:82vh;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-bottom:none;
+    border-radius:20px 20px 0 0;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    transition:transform 0.42s cubic-bezier(0.22,1,0.36,1);
+    box-shadow:0 -20px 60px -20px rgba(0,0,0,0.7);
+  }
+  .cm-panel.show{transform:translateX(-50%) translateY(0);}
+
+  .cm-head{
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:16px 18px 12px;
+    border-bottom:1px solid var(--line);
+  }
+  .cm-head-title{
+    font-size:15px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    color:var(--text);
+  }
+  .cm-head-sub{
+    font-size:11px;
+    color:var(--muted-2);
+    margin-top:2px;
+    letter-spacing:0.02em;
+  }
+  .cm-close{
+    background:none;
+    border:none;
+    color:var(--muted);
+    font-size:22px;
+    font-weight:300;
+    line-height:1;
+    cursor:pointer;
+    padding:6px 10px;
+    transition:color 0.15s, transform 0.1s;
+    font-family:inherit;
+    border-radius:8px;
+  }
+  .cm-close:hover{color:var(--text);background:var(--grey);}
+  .cm-close:active{transform:scale(0.85);}
+
+  .cm-scroll{
+    flex:1 1 auto;
+    overflow-y:auto;
+    padding:16px 18px 8px;
+    scrollbar-width:thin;
+    scrollbar-color:#2a2a2e transparent;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+  }
+  .cm-scroll::-webkit-scrollbar{width:6px;}
+  .cm-scroll::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:3px;}
+  .cm-scroll::-webkit-scrollbar-track{background:transparent;}
+
+  .cm-empty{
+    padding:48px 20px;
+    text-align:center;
+    color:var(--muted-2);
+    font-size:13px;
+    line-height:1.6;
+  }
+  .cm-empty strong{
+    color:var(--muted);
+    font-weight:600;
+    display:block;
+    margin-bottom:6px;
+    font-size:14px;
+  }
+
+  /* Comment tree */
+  .cm-comment{
+    position:relative;
+    margin-bottom:14px;
+    animation:cmCommentIn 0.32s var(--ease) both;
+  }
+  @keyframes cmCommentIn{
+    from{opacity:0;transform:translateY(8px);}
+    to{opacity:1;transform:translateY(0);}
+  }
+  .cm-comment-inner{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:11px 13px;
+    transition:border-color 0.15s, background 0.15s;
+  }
+  .cm-comment-inner:hover{border-color:#2e2e33;}
+  .cm-comment.is-mine .cm-comment-inner{
+    border-color:rgba(74,222,128,0.22);
+    background:rgba(74,222,128,0.03);
+  }
+  .cm-comment-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:5px;
+  }
+  .cm-avatar{
+    width:22px;
+    height:22px;
+    flex:none;
+    border-radius:50%;
+    background:linear-gradient(135deg,#3a3a40,#1f1f23);
+    color:var(--text);
+    font-size:10px;
+    font-weight:700;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    letter-spacing:0;
+    user-select:none;
+  }
+  .cm-name{
+    font-size:12px;
+    font-weight:600;
+    color:var(--text);
+    letter-spacing:-0.01em;
+  }
+  .cm-time{
+    font-size:10.5px;
+    color:var(--muted-2);
+    margin-left:auto;
+  }
+  .cm-text{
+    font-size:13.5px;
+    color:var(--text);
+    line-height:1.55;
+    word-wrap:break-word;
+    overflow-wrap:break-word;
+    white-space:pre-wrap;
+  }
+  .cm-actions{
+    display:flex;
+    gap:6px;
+    margin-top:6px;
+  }
+  .cm-reply-btn{
+    background:none;
+    border:none;
+    color:var(--muted);
+    font-size:11px;
+    font-weight:600;
+    cursor:pointer;
+    padding:3px 7px;
+    border-radius:6px;
+    font-family:inherit;
+    transition:color 0.15s, background 0.15s;
+    letter-spacing:0.02em;
+  }
+  .cm-reply-btn:hover{color:var(--text);background:var(--grey);}
+  .cm-delete-btn{
+    background:none;
+    border:none;
+    color:var(--muted-2);
+    font-size:11px;
+    cursor:pointer;
+    padding:3px 7px;
+    border-radius:6px;
+    font-family:inherit;
+    transition:color 0.15s, background 0.15s;
+  }
+  .cm-delete-btn:hover{color:#f87171;background:rgba(248,113,113,0.08);}
+
+  /* Reply indicator shown above the type box when replying */
+  .cm-replying-to{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    background:var(--grey);
+    border:1px solid var(--line);
+    border-radius:8px 8px 0 0;
+    border-bottom:none;
+    font-size:11.5px;
+    color:var(--muted);
+    animation:cmCommentIn 0.2s var(--ease) both;
+  }
+  .cm-replying-to strong{color:var(--text);font-weight:600;}
+  .cm-replying-to-cancel{
+    margin-left:auto;
+    background:none;
+    border:none;
+    color:var(--muted);
+    cursor:pointer;
+    font-size:14px;
+    padding:0 4px;
+    line-height:1;
+    font-family:inherit;
+  }
+  .cm-replying-to-cancel:hover{color:var(--text);}
+
+  /* Nested replies (indented under their parent) */
+  .cm-children{
+    margin-left:18px;
+    padding-left:14px;
+    border-left:2px solid var(--line);
+    margin-top:8px;
+  }
+  .cm-children .cm-comment{margin-bottom:10px;}
+  .cm-children .cm-comment-inner{padding:9px 11px;}
+  .cm-children .cm-avatar{width:18px;height:18px;font-size:9px;}
+
+  /* Composer at the bottom (always visible) */
+  .cm-composer{
+    flex:0 0 auto;
+    border-top:1px solid var(--line);
+    background:var(--panel);
+    padding:10px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+  .cm-composer-inner{
+    display:flex;
+    gap:8px;
+    align-items:flex-end;
+  }
+  .cm-input{
+    flex:1;
+    resize:none;
+    min-height:40px;
+    max-height:120px;
+    padding:10px 12px;
+    background:var(--black);
+    border:1px solid var(--line);
+    border-radius:10px;
+    color:var(--text);
+    font-size:13.5px;
+    font-family:inherit;
+    outline:none;
+    line-height:1.5;
+    transition:border-color 0.15s;
+  }
+  .cm-input:focus{border-color:#3a3a40;}
+  .cm-input::placeholder{color:var(--muted-2);}
+  .cm-input.with-replying-to{border-radius:0 0 10px 10px;border-top:none;}
+  .cm-send{
+    flex:none;
+    padding:0 16px;
+    height:40px;
+    background:var(--text);
+    color:var(--black);
+    border:none;
+    border-radius:10px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+    transition:transform 0.1s, opacity 0.15s, background 0.15s;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+  }
+  .cm-send:hover{background:var(--white);}
+  .cm-send:active{transform:scale(0.97);}
+  .cm-send:disabled{opacity:0.5;cursor:default;}
+  .cm-send .cm-spin{
+    display:inline-block;
+    width:13px;
+    height:13px;
+    border:2px solid rgba(0,0,0,0.25);
+    border-top-color:var(--black);
+    border-radius:50%;
+    animation:cmSpin 0.7s linear infinite;
+  }
+  @keyframes cmSpin{to{transform:rotate(360deg);}}
+
+  /* Optimistic (pending) comment — slightly faded until the server confirms */
+  .cm-comment.is-pending .cm-comment-inner{
+    opacity:0.55;
+    border-style:dashed;
+  }
+  .cm-comment.is-pending .cm-avatar{
+    animation:cmPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes cmPulse{
+    0%,100%{opacity:0.6;}
+    50%{opacity:1;}
+  }
+
   /* ---------- footer ---------- */
   footer{
     border-top:1px solid var(--line);
@@ -985,8 +1335,9 @@
     line-height:1.6;
   }
   .modal-why strong{
-    color:var(--muted);
+    color:#fbbf24;
     font-weight:600;
+    text-shadow:0 0 12px rgba(251,191,36,0.25);
   }
 
   /* ---------- screenshot lightbox ---------- */
@@ -1976,6 +2327,32 @@
   </div>
 </div>
 
+<!-- ============================================================
+     FLOATING COMMENTS PANEL — slides up from the bottom when a
+     user taps the comments button on a build card.
+     ============================================================ -->
+<div class="cm-overlay" id="cm-overlay"></div>
+<div class="cm-panel" id="cm-panel" role="dialog" aria-labelledby="cm-head-title">
+  <div class="cm-head">
+    <div>
+      <div class="cm-head-title" id="cm-head-title">Comments</div>
+      <div class="cm-head-sub" id="cm-head-sub">0 comments</div>
+    </div>
+    <button class="cm-close" id="cm-close" title="Close" aria-label="Close">&times;</button>
+  </div>
+  <div class="cm-scroll" id="cm-scroll"></div>
+  <div class="cm-composer">
+    <div class="cm-replying-to" id="cm-replying-to" style="display:none;">
+      <span>Reply to <strong id="cm-replying-name"></strong></span>
+      <button class="cm-replying-to-cancel" id="cm-replying-cancel" title="Cancel reply" aria-label="Cancel reply">&times;</button>
+    </div>
+    <div class="cm-composer-inner" id="cm-composer-inner">
+      <textarea class="cm-input" id="cm-input" placeholder="Add a comment..." rows="1"></textarea>
+      <button class="cm-send" id="cm-send">Send</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   // ============================================================
@@ -2034,6 +2411,13 @@
         +     '<button type="button" class="dl-admin-btn minus" data-admin-action="dec" data-admin-key="' + buildKey + '" title="Decrease count" aria-label="Decrease count">&minus;</button>'
         +     '<button type="button" class="dl-admin-btn plus"  data-admin-action="inc" data-admin-key="' + buildKey + '" title="Increase count" aria-label="Increase count">+</button>'
         +   '</span>'
+        // Comments button — sits at the bottom-LEFT of the card, same pill
+        // design as the download counter. Tapping it opens the floating
+        // comments panel for this build.
+        +   '<button type="button" class="dl-comments" data-comments-key="' + buildKey + '" title="Comments" aria-label="Comments">'
+        +     '<svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>'
+        +     '<span class="dl-comments-num">0</span>'
+        +   '</button>'
         +   '<span class="dl-counter" data-count-key="' + buildKey + '">'
         +     '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
         +     '<span class="dl-counter-num">–</span>'
@@ -2192,6 +2576,555 @@
       if(action === 'inc') adminAdjustCount(key, 1);
       else if(action === 'dec') adminAdjustCount(key, -1);
     });
+  })();
+
+  /* ═══════════════════════════════════════════════════════════════════
+     COMMENTS MODULE — per-build comment threads
+     - Floating panel slides up from the bottom (springy cubic-bezier)
+     - Tree structure: top-level comments + nested replies
+     - Anonymous display names (3 letters + 2 digits, cached per browser)
+     - Optimistic UI: comment appears instantly, marked "pending" until
+       the server confirms. No visible refresh.
+     - Same Upstash backend as /api/issues (different key prefix)
+     ═══════════════════════════════════════════════════════════════════ */
+  (function(){
+    var CM_API = '/api/comments';
+    var CM_CACHE_KEY = 'rexus_comments_cache_v1';
+    var CM_NAME_KEY = 'rexus_cm_display_name_v1';
+    var CM_CREATOR_KEY = 'rexus_cm_creator_id_v1';
+
+    // ---- State ----
+    var _comments = {};           // { buildKey: [comment, ...] }
+    var _currentBuild = null;     // which build's panel is open
+    var _replyTo = null;          // comment object we're replying to (or null)
+    var _submitting = false;
+    var _panelOpen = false;
+
+    // ---- DOM refs ----
+    function $(id){ return document.getElementById(id); }
+    function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+    // ---- Anonymous display name (same scheme as Issues module) ----
+    var NAME_LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+    function randomNameCandidate(){
+      var s = '';
+      for(var i=0;i<3;i++) s += NAME_LETTERS[Math.floor(Math.random()*NAME_LETTERS.length)];
+      s = s.charAt(0).toUpperCase() + s.slice(1);
+      return s + (10 + Math.floor(Math.random()*90));
+    }
+    function collectKnownNames(){
+      var known = {};
+      Object.keys(_comments).forEach(function(k){
+        (_comments[k] || []).forEach(function(c){
+          if(c.name) known[c.name] = true;
+        });
+      });
+      return known;
+    }
+    function getDisplayName(){
+      try{
+        var name = localStorage.getItem(CM_NAME_KEY);
+        if(name) return name;
+        var known = collectKnownNames();
+        var candidate = randomNameCandidate();
+        var tries = 0;
+        while(known[candidate] && tries < 25){ candidate = randomNameCandidate(); tries++; }
+        localStorage.setItem(CM_NAME_KEY, candidate);
+        return candidate;
+      }catch(e){ return randomNameCandidate(); }
+    }
+    function getCreatorId(){
+      try{
+        var id = localStorage.getItem(CM_CREATOR_KEY);
+        if(!id){
+          id = 'cm_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+          localStorage.setItem(CM_CREATOR_KEY, id);
+        }
+        return id;
+      }catch(e){ return null; }
+    }
+
+    // ---- Cache ----
+    function cacheRead(buildKey){
+      try{
+        var raw = localStorage.getItem(CM_CACHE_KEY);
+        if(!raw) return [];
+        var all = JSON.parse(raw);
+        return Array.isArray(all[buildKey]) ? all[buildKey] : [];
+      }catch(e){ return []; }
+    }
+    function cacheWrite(buildKey, arr){
+      try{
+        var raw = localStorage.getItem(CM_CACHE_KEY);
+        var all = raw ? JSON.parse(raw) : {};
+        if(!all || typeof all !== 'object') all = {};
+        all[buildKey] = arr;
+        localStorage.setItem(CM_CACHE_KEY, JSON.stringify(all));
+      }catch(e){}
+    }
+
+    // ---- Helpers ----
+    function fmtDate(ts){
+      if(!ts) return '';
+      var d = new Date(ts);
+      if(isNaN(d.getTime())) return '';
+      var diff = Date.now() - d.getTime();
+      var mins = Math.floor(diff/60000);
+      if(mins < 1) return 'just now';
+      if(mins < 60) return mins + 'm ago';
+      var hrs = Math.floor(mins/60);
+      if(hrs < 24) return hrs + 'h ago';
+      var days = Math.floor(hrs/24);
+      if(days < 7) return days + 'd ago';
+      return d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    }
+    function avatarFor(name){
+      // First 2 chars, uppercased
+      var s = String(name || '?').slice(0,2).toUpperCase();
+      return s;
+    }
+    function countComments(arr){
+      // Count top-level + all nested replies
+      var n = 0;
+      for(var i=0;i<arr.length;i++){
+        n++;
+        if(arr[i].replies && arr[i].replies.length) n += countComments(arr[i].replies);
+      }
+      return n;
+    }
+
+    // ---- API ----
+    function apiFetch(buildKey){
+      var ctrl = new AbortController();
+      var id = setTimeout(function(){ ctrl.abort(); }, 6000);
+      return fetch(CM_API + '?key=' + encodeURIComponent(buildKey), { method:'GET', signal:ctrl.signal, headers:{'Accept':'application/json'} })
+        .then(function(r){ clearTimeout(id); return r.ok ? r.json() : null; })
+        .then(function(data){
+          if(!data || !Array.isArray(data.comments)) return cacheRead(buildKey);
+          // Sort: oldest first (so replies read top-to-bottom naturally)
+          data.comments.sort(function(a,b){ return (a.createdAt||0) - (b.createdAt||0); });
+          _comments[buildKey] = data.comments;
+          cacheWrite(buildKey, data.comments);
+          return data.comments;
+        })
+        .catch(function(){
+          clearTimeout(id);
+          return cacheRead(buildKey);
+        });
+    }
+
+    function apiCreate(buildKey, payload){
+      var ctrl = new AbortController();
+      var id = setTimeout(function(){ ctrl.abort(); }, 8000);
+      return fetch(CM_API + '?key=' + encodeURIComponent(buildKey), {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body: JSON.stringify(payload),
+        signal: ctrl.signal
+      })
+        .then(function(res){
+          clearTimeout(id);
+          if(!res.ok){
+            return res.json().catch(function(){ return {}; }).then(function(j){
+              throw new Error((j && j.error) ? j.error : 'Failed to post');
+            });
+          }
+          return res.json();
+        })
+        .then(function(data){ return data && data.comment; });
+    }
+
+    function apiDelete(buildKey, commentId){
+      var ctrl = new AbortController();
+      var id = setTimeout(function(){ ctrl.abort(); }, 6000);
+      return fetch(CM_API + '?key=' + encodeURIComponent(buildKey) + '&id=' + encodeURIComponent(commentId), {
+        method:'DELETE',
+        signal: ctrl.signal
+      })
+        .then(function(r){ clearTimeout(id); return r.ok; })
+        .catch(function(){ clearTimeout(id); return false; });
+    }
+
+    // ---- Local mutation helpers (optimistic) ----
+    // Find a comment (top-level or nested) by id. Returns {comment, parentArr, parent}.
+    function findComment(arr, id){
+      for(var i=0;i<arr.length;i++){
+        if(arr[i].id === id) return { comment: arr[i], parentArr: arr, parent: null };
+        if(arr[i].replies && arr[i].replies.length){
+          var found = findComment(arr[i].replies, id);
+          if(found) return found;
+        }
+      }
+      return null;
+    }
+    function removeComment(arr, id){
+      for(var i=0;i<arr.length;i++){
+        if(arr[i].id === id){ arr.splice(i,1); return true; }
+        if(arr[i].replies && arr[i].replies.length){
+          if(removeComment(arr[i].replies, id)) return true;
+        }
+      }
+      return false;
+    }
+
+    // ---- Rendering ----
+    function renderComment(c, isChild){
+      var creatorId = getCreatorId();
+      var isMine = creatorId && c.creatorId && c.creatorId === creatorId;
+      var canDelete = isMine; // users can delete their own comments
+      var childrenHtml = '';
+      if(c.replies && c.replies.length){
+        childrenHtml = '<div class="cm-children">' +
+          c.replies.map(function(r){ return renderComment(r, true); }).join('') +
+        '</div>';
+      }
+      var actions = '<div class="cm-actions">' +
+        '<button class="cm-reply-btn" data-cm-action="reply" data-cm-id="' + esc(c.id) + '">Reply</button>' +
+        (canDelete ? '<button class="cm-delete-btn" data-cm-action="delete" data-cm-id="' + esc(c.id) + '">Delete</button>' : '') +
+      '</div>';
+      return '<div class="cm-comment' + (isMine ? ' is-mine' : '') + (c._pending ? ' is-pending' : '') + '" data-cm-id="' + esc(c.id) + '">' +
+        '<div class="cm-comment-inner">' +
+          '<div class="cm-comment-head">' +
+            '<span class="cm-avatar">' + esc(avatarFor(c.name)) + '</span>' +
+            '<span class="cm-name">' + esc(c.name || 'Anonymous') + '</span>' +
+            '<span class="cm-time">' + esc(fmtDate(c.createdAt)) + '</span>' +
+          '</div>' +
+          '<div class="cm-text">' + esc(c.text) + '</div>' +
+          actions +
+        '</div>' +
+        childrenHtml +
+      '</div>';
+    }
+
+    function renderList(){
+      var scroll = $('cm-scroll');
+      if(!scroll) return;
+      var arr = _comments[_currentBuild] || [];
+      if(!arr.length){
+        scroll.innerHTML = '<div class="cm-empty"><strong>No comments yet.</strong>Be the first to share your thoughts.</div>';
+      } else {
+        // Only render top-level; nested replies are rendered inside renderComment
+        var topLevel = arr.filter(function(c){ return !c.parentId; });
+        scroll.innerHTML = topLevel.map(function(c){ return renderComment(c, false); }).join('');
+      }
+      // Update header count
+      var sub = $('cm-head-sub');
+      if(sub){
+        var n = countComments(arr);
+        sub.textContent = n + ' comment' + (n === 1 ? '' : 's');
+      }
+      // Update the comments button count on the card
+      document.querySelectorAll('[data-comments-key="' + _currentBuild + '"] .dl-comments-num').forEach(function(el){
+        el.textContent = formatCount(countComments(arr));
+      });
+    }
+
+    function scrollToBottom(smooth){
+      var scroll = $('cm-scroll');
+      if(!scroll) return;
+      // Use rAF so the new DOM is painted first
+      requestAnimationFrame(function(){
+        scroll.scrollTo({ top: scroll.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+      });
+    }
+
+    // ---- Panel open/close (animated) ----
+    function openPanel(buildKey){
+      _currentBuild = buildKey;
+      _replyTo = null;
+      // Hydrate from cache first so the panel isn't empty while fetching
+      if(!_comments[buildKey]) _comments[buildKey] = cacheRead(buildKey);
+      renderList();
+      // Reset composer
+      var input = $('cm-input');
+      if(input){ input.value = ''; input.style.height = 'auto'; }
+      hideReplyIndicator();
+      // Show panel + overlay (CSS handles the slide-up animation)
+      var overlay = $('cm-overlay');
+      var panel = $('cm-panel');
+      if(overlay) overlay.classList.add('show');
+      if(panel) panel.classList.add('show');
+      _panelOpen = true;
+      // Update title
+      var title = $('cm-head-title');
+      if(title) title.textContent = 'Comments';
+      // Fetch fresh data from server (silent — only re-render if changed)
+      apiFetch(buildKey).then(function(){
+        if(_currentBuild === buildKey){
+          renderList();
+          scrollToBottom(false);
+        }
+      });
+      // Focus input after the slide-up animation starts
+      setTimeout(function(){ if(input) input.focus(); }, 300);
+    }
+
+    function closePanel(){
+      var overlay = $('cm-overlay');
+      var panel = $('cm-panel');
+      if(overlay) overlay.classList.remove('show');
+      if(panel) panel.classList.remove('show');
+      _panelOpen = false;
+      _replyTo = null;
+      hideReplyIndicator();
+    }
+
+    // ---- Reply indicator ----
+    function showReplyIndicator(comment){
+      _replyTo = comment;
+      var wrap = $('cm-replying-to');
+      var nameEl = $('cm-replying-name');
+      var input = $('cm-input');
+      if(wrap) wrap.style.display = 'flex';
+      if(nameEl) nameEl.textContent = comment.name || 'Anonymous';
+      if(input){
+        input.classList.add('with-replying-to');
+        input.placeholder = 'Reply to ' + (comment.name || 'Anonymous') + '...';
+        input.focus();
+      }
+    }
+    function hideReplyIndicator(){
+      _replyTo = null;
+      var wrap = $('cm-replying-to');
+      var input = $('cm-input');
+      if(wrap) wrap.style.display = 'none';
+      if(input){
+        input.classList.remove('with-replying-to');
+        input.placeholder = 'Add a comment...';
+      }
+    }
+
+    // ---- Submit (optimistic) ----
+    function submitComment(){
+      if(_submitting) return;
+      var input = $('cm-input');
+      var text = input ? (input.value || '').trim() : '';
+      if(!text) return;
+      if(!_currentBuild) return;
+
+      var name = getDisplayName();
+      var creatorId = getCreatorId();
+      var parentId = _replyTo ? _replyTo.id : null;
+      var tempId = 'pending_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+
+      // Build the optimistic comment object
+      var optimistic = {
+        id: tempId,
+        name: name,
+        creatorId: creatorId,
+        text: text,
+        parentId: parentId,
+        replies: [],
+        createdAt: Date.now(),
+        _pending: true
+      };
+
+      // Insert into local state
+      var arr = _comments[_currentBuild] || (_comments[_currentBuild] = []);
+      if(parentId){
+        var found = findComment(arr, parentId);
+        if(found){
+          if(!found.comment.replies) found.comment.replies = [];
+          found.comment.replies.push(optimistic);
+        } else {
+          arr.push(optimistic); // fallback if parent not found
+        }
+      } else {
+        arr.push(optimistic);
+      }
+      cacheWrite(_currentBuild, arr);
+
+      // Re-render + scroll to the new comment
+      renderList();
+      scrollToBottom(true);
+      // Clear input + reply indicator
+      if(input){ input.value = ''; input.style.height = 'auto'; }
+      hideReplyIndicator();
+
+      // Disable send button while in flight
+      _submitting = true;
+      var sendBtn = $('cm-send');
+      if(sendBtn){ sendBtn.disabled = true; sendBtn.innerHTML = '<span class="cm-spin"></span>'; }
+
+      // Fire the request
+      apiCreate(_currentBuild, {
+        name: name,
+        creatorId: creatorId,
+        text: text,
+        parentId: parentId
+      })
+        .then(function(comment){
+          if(comment){
+            // Replace the optimistic entry with the real one
+            var cur = _comments[_currentBuild] || [];
+            var found = findComment(cur, tempId);
+            if(found){
+              // Copy the real comment's fields over the optimistic one
+              Object.keys(comment).forEach(function(k){ found.comment[k] = comment[k]; });
+              found.comment._pending = false;
+            } else {
+              // Fallback: just append the real comment
+              if(parentId){
+                var parent = findComment(cur, parentId);
+                if(parent){
+                  if(!parent.comment.replies) parent.comment.replies = [];
+                  parent.comment.replies.push(comment);
+                } else cur.push(comment);
+              } else {
+                cur.push(comment);
+              }
+            }
+            _comments[_currentBuild] = cur;
+            cacheWrite(_currentBuild, cur);
+            renderList();
+            // Update the card's comments button count
+            updateCardCount(_currentBuild);
+          }
+        })
+        .catch(function(e){
+          // Remove the optimistic comment on failure
+          var cur = _comments[_currentBuild] || [];
+          removeComment(cur, tempId);
+          _comments[_currentBuild] = cur;
+          cacheWrite(_currentBuild, cur);
+          renderList();
+          updateCardCount(_currentBuild);
+          // Show a toast
+          var t = document.createElement('div');
+          t.className = 'is-toast';
+          t.textContent = (e && e.message) ? e.message : 'Failed to post comment';
+          document.body.appendChild(t);
+          requestAnimationFrame(function(){ t.classList.add('show'); });
+          setTimeout(function(){ t.classList.remove('show'); }, 2400);
+        })
+        .then(function(){
+          _submitting = false;
+          if(sendBtn){ sendBtn.disabled = false; sendBtn.innerHTML = 'Send'; }
+        });
+    }
+
+    function updateCardCount(buildKey){
+      var arr = _comments[buildKey] || [];
+      var n = countComments(arr);
+      document.querySelectorAll('[data-comments-key="' + buildKey + '"] .dl-comments-num').forEach(function(el){
+        el.textContent = formatCount(n);
+      });
+    }
+
+    // ---- Delete (optimistic) ----
+    function deleteComment(commentId){
+      if(!_currentBuild) return;
+      if(!confirm('Delete this comment? This cannot be undone.')) return;
+      var arr = _comments[_currentBuild] || [];
+      // Optimistic: remove locally first
+      var snapshot = JSON.parse(JSON.stringify(arr));
+      removeComment(arr, commentId);
+      _comments[_currentBuild] = arr;
+      cacheWrite(_currentBuild, arr);
+      renderList();
+      updateCardCount(_currentBuild);
+      // Fire the request
+      apiDelete(_currentBuild, commentId)
+        .then(function(ok){
+          if(!ok){
+            // Restore on failure
+            _comments[_currentBuild] = snapshot;
+            cacheWrite(_currentBuild, snapshot);
+            renderList();
+            updateCardCount(_currentBuild);
+          }
+        });
+    }
+
+    // ---- Wire up ----
+    function wire(){
+      // Comments button click (on each build card)
+      var list = document.getElementById('buildsList');
+      if(list){
+        list.addEventListener('click', function(e){
+          var btn = e.target.closest && e.target.closest('.dl-comments');
+          if(!btn) return;
+          e.preventDefault();
+          e.stopPropagation();
+          var key = btn.getAttribute('data-comments-key');
+          if(key) openPanel(key);
+        });
+      }
+
+      // Close button
+      var closeBtn = $('cm-close');
+      if(closeBtn) closeBtn.addEventListener('click', closePanel);
+      // Overlay click
+      var overlay = $('cm-overlay');
+      if(overlay) overlay.addEventListener('click', closePanel);
+      // ESC
+      document.addEventListener('keydown', function(e){
+        if(e.key === 'Escape' && _panelOpen) closePanel();
+      });
+
+      // Send button
+      var sendBtn = $('cm-send');
+      if(sendBtn) sendBtn.addEventListener('click', submitComment);
+
+      // Input: Enter to send (Shift+Enter for newline), auto-grow
+      var input = $('cm-input');
+      if(input){
+        input.addEventListener('keydown', function(e){
+          if(e.key === 'Enter' && !e.shiftKey){
+            e.preventDefault();
+            submitComment();
+          }
+        });
+        input.addEventListener('input', function(){
+          // Auto-grow the textarea
+          input.style.height = 'auto';
+          input.style.height = Math.min(120, input.scrollHeight) + 'px';
+        });
+      }
+
+      // Cancel reply
+      var cancelReply = $('cm-replying-cancel');
+      if(cancelReply) cancelReply.addEventListener('click', hideReplyIndicator);
+
+      // Reply + Delete buttons (event delegation on the scroll area)
+      var scroll = $('cm-scroll');
+      if(scroll){
+        scroll.addEventListener('click', function(e){
+          var btn = e.target.closest && e.target.closest('[data-cm-action]');
+          if(!btn) return;
+          var action = btn.getAttribute('data-cm-action');
+          var id = btn.getAttribute('data-cm-id');
+          if(!id) return;
+          if(action === 'reply'){
+            var arr = _comments[_currentBuild] || [];
+            var found = findComment(arr, id);
+            if(found) showReplyIndicator(found.comment);
+          } else if(action === 'delete'){
+            deleteComment(id);
+          }
+        });
+      }
+
+      // Fetch initial comment counts for every build (for the button counters)
+      setTimeout(function(){
+        var keys = [];
+        document.querySelectorAll('[data-comments-key]').forEach(function(el){
+          var k = el.getAttribute('data-comments-key');
+          if(k && keys.indexOf(k) < 0) keys.push(k);
+        });
+        keys.forEach(function(k){
+          apiFetch(k).then(function(){
+            updateCardCount(k);
+            // Show the comments button (it starts hidden via opacity:0)
+            document.querySelectorAll('[data-comments-key="' + k + '"]').forEach(function(el){
+              el.classList.add('show');
+            });
+          });
+        });
+      }, 100);
+    }
+
+    wire();
   })();
 
   // ---------- starfield ----------
@@ -3473,11 +4406,7 @@
           isToast('Owner mode unlocked');
           document.body.classList.add('is-owner');
           if(_screen === 'detail') renderDetail();
-          // If not on the issues page, navigate there so the user can start editing
-          if(!document.querySelector('#page-issues.active')){
-            _screen = 'home';
-            goTo('issues');
-          }
+          // Stay on whatever page the user is currently on — don't jump to Issues.
         } else {
           if(err){ err.classList.add('show'); }
         }
@@ -3562,16 +4491,14 @@
       }
 
       // Boat icon (brand logo) at top-left opens the owner password prompt.
-      // If already unlocked, it jumps straight to the issues page.
+      // If already unlocked, tapping it just shows a toast confirming the
+      // state — it does NOT navigate away from the current page.
       var brand = $('brand-logo');
       if(brand){
         brand.addEventListener('click', function(e){
           e.preventDefault();
           if(_ownerUnlocked){
-            if(!document.querySelector('#page-issues.active')){
-              _screen = 'home';
-              goTo('issues');
-            }
+            isToast('Owner mode is already on');
           } else {
             openOwnerPrompt();
           }

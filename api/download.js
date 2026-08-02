@@ -73,6 +73,17 @@ function sanitizeKey(k){
   return String(k || '').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 64);
 }
 
+// Parse a value that might be corrupted with JSON quotes from the old
+// buggy setCount. Examples: '"5"' → 5, '5' → 5, '"0"' → 0, null → 0.
+function parseCountValue(raw){
+  if(typeof raw !== 'string') return 0;
+  // Strip surrounding JSON quotes if present (old bug stored '"5"' not '5')
+  var s = raw.trim();
+  if(s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
+  var n = parseInt(s, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
 async function getCount(key){
   if(USE_KV){
     try{
@@ -82,10 +93,10 @@ async function getCount(key){
       if(r.ok){
         const data = await r.json();
         if(data && typeof data.result === 'string'){
-          return parseInt(data.result, 10) || 0;
+          return parseCountValue(data.result);
         }
         if(data && typeof data.value === 'string'){
-          return parseInt(data.value, 10) || 0;
+          return parseCountValue(data.value);
         }
       }
       return 0;
@@ -248,39 +259,16 @@ export default async function handler(req){
 
       let newCount;
       if(USE_KV){
-        // Use atomic INCRBY / DECRBY so concurrent admin taps can't
-        // race and lose an increment. This also avoids the GET+SET
-        // round-trip which was previously buggy.
-        try{
-          if(delta > 0){
-            const r = await fetch(`${KV_URL_NORM}/INCRBY/${encodeURIComponent('dl:count:' + key)}/${delta}`, {
-              method: 'POST',
-              headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
-            });
-            if(r.ok){
-              const data = await r.json();
-              newCount = parseInt(data.result, 10) || 0;
-            } else { newCount = await getCount(key); }
-          } else {
-            // DECRBY by abs(delta). Note: Redis DECRBY can go negative,
-            // so we clamp afterwards if needed.
-            const absDelta = Math.abs(delta);
-            const r = await fetch(`${KV_URL_NORM}/DECRBY/${encodeURIComponent('dl:count:' + key)}/${absDelta}`, {
-              method: 'POST',
-              headers: KV_TOKEN ? { 'Authorization': `Bearer ${KV_TOKEN}` } : {}
-            });
-            if(r.ok){
-              const data = await r.json();
-              newCount = parseInt(data.result, 10) || 0;
-            } else { newCount = await getCount(key); }
-          }
-        }catch(_){ newCount = await getCount(key); }
-
-        // Clamp at 0 — if DECRBY went negative, reset to 0.
-        if(newCount < 0){
-          await setCount(key, 0);
-          newCount = 0;
-        }
+        // First, read the current value and NORMALIZE it. The old buggy
+        // setCount stored values with JSON quotes (e.g. '"5"' instead of
+        // '5'), which breaks INCRBY/DECRBY. We re-store it as a plain
+        // integer string so all future operations work correctly.
+        const current = await getCount(key);
+        // Always re-store as a clean integer (fixes corruption in-place)
+        await setCount(key, current);
+        // Now compute the new value and store it (URL-path form, no quotes)
+        newCount = Math.max(0, current + delta);
+        await setCount(key, newCount);
       } else {
         // In-memory fallback (no KV)
         const current = await getCount(key);
